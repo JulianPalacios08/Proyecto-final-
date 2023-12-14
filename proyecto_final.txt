@@ -1,0 +1,176 @@
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <UniversalTelegramBot.h>
+#include "DHT.h"
+
+#define DHTPIN 2
+#define DHTTYPE DHT11
+#define sensorhumedad 34
+#define relay_pin 5
+
+// Wifi network station credentials  
+#define WIFI_SSID "TP-LINK_DE16"
+#define WIFI_PASSWORD "67743667"
+
+// Telegram BOT Token (Get from Botfather)
+#define BOT_TOKEN "6440356881:AAHtZzYt3dKnS11EO_yDICKqGjNfVxCOHu0"
+const unsigned long BOT_MTBS = 1000; // Mean time between scan messages
+
+WiFiClientSecure secured_client;
+UniversalTelegramBot bot(BOT_TOKEN, secured_client);
+unsigned long bot_lasttime = 0; // Last time messages' scan has been done
+const int ledPin = LED_BUILTIN;
+int ledStatus = 0;
+DHT dht(DHTPIN, DHTTYPE);
+
+void handleNewMessages(int numNewMessages){
+  Serial.print("handleNewMessages ");
+  Serial.println(numNewMessages);
+  for (int i = 0; i < numNewMessages; i++){
+    String chat_id = bot.messages[i].chat_id;
+    String text = bot.messages[i].text;
+    String from_name = bot.messages[i].from_name;
+    if (from_name == ""){
+      from_name = "Guest";
+    }
+   
+    if (text == "/HUMEDADSUELO"){
+      Humedad_suelo(chat_id);
+    }
+   
+    if (text == "/HUMEDADAIRE"){
+      Humedad_aire(chat_id);
+    }
+   
+    if (text == "/TEMPERATURA"){
+      Temperatura(chat_id);
+    }
+   
+    if (text == "/status"){
+      status(chat_id);
+    }  
+     
+    if (text == "/start"){
+      String welcome = "Bienvenido al bot, " + from_name + ".\n";
+      welcome += "Puedes consultar:\n";
+      welcome += "/HUMEDADSUELO : para leer humedad de suelo\n";
+      welcome += "/HUMEDADAIRE : para leer humedad del aire\n";
+      welcome += "/TEMPERATURA : para leer temperatura\n";
+      welcome += "/status : para estado del sensor\n";
+      bot.sendMessage(chat_id, welcome, "Markdown");
+    }
+  }
+}
+
+void setup(){
+  Serial.begin(115200);
+  Serial.println(F("Iniciando..."));
+  dht.begin();
+ 
+  pinMode(sensorhumedad, INPUT);
+  pinMode(relay_pin, OUTPUT);
+ 
+  Serial.print("Conectando a Wifi SSID ");
+  Serial.print(WIFI_SSID);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  while (WiFi.status() != WL_CONNECTED){
+    Serial.print(".");
+    delay(500);
+  }
+
+  Serial.print("\nWiFi conectado. Dirección IP: ");
+  Serial.println(WiFi.localIP());
+
+  secured_client.setCACert(TELEGRAM_CERTIFICATE_ROOT); // Add root certificate for api.telegram.org
+ 
+  Serial.print("Obteniendo hora: ");
+  configTime(0, 0, "pool.ntp.org"); // get UTC time via NTP
+  time_t now = time(nullptr);
+ 
+  while (now < 24 * 3600){
+    Serial.print(".");
+    delay(100);
+    now = time(nullptr);
+  }
+
+  Serial.println(now);
+}
+
+void loop(){
+  delay(2000);
+ 
+  if (millis() - bot_lasttime > BOT_MTBS){
+    int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+   
+    while (numNewMessages){
+      Serial.println("Respuesta recibida");
+      handleNewMessages(numNewMessages);
+      numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    }
+   
+    bot_lasttime = millis();
+  }
+}
+
+void Humedad_aire(String chat_id){
+  float h = dht.readHumidity();
+  char buffer[25];
+  int n = sprintf(buffer, "humA=%.2f", h);
+  bot.sendMessage(chat_id, buffer, "");
+  Serial.println(h);
+}
+
+void Humedad_suelo(String chat_id){
+    int Valor = analogRead(sensorhumedad);
+    char buffer[50];
+    int v = sprintf(buffer, "humS=%d", Valor);
+    bot.sendMessage(chat_id, buffer, "");
+    Serial.println(Valor);
+ 
+  if (Valor < 2000) {
+    sprintf(buffer, "El suelo está húmedo", Valor);
+    bot.sendMessage(chat_id, buffer, "");
+    Serial.println("El suelo está húmedo");
+    digitalWrite(relay_pin, LOW); // Apaga motor
+    Serial.println(Valor);
+  } else if (Valor >= 2000 && Valor <= 3900) {
+    sprintf(buffer, "El suelo está medio húmedo", Valor);
+    bot.sendMessage(chat_id, buffer, "");
+    Serial.println("El suelo está medio húmedo");
+    digitalWrite(relay_pin, HIGH); // Apaga motor
+    Serial.println(Valor);
+  } else {
+    sprintf(buffer, "El suelo está seco", Valor);
+    bot.sendMessage(chat_id, buffer, "");
+    Serial.println("El suelo está húmedo");
+    digitalWrite(relay_pin, HIGH); // Encender motor
+    Serial.println(Valor);
+  }
+}
+
+void Temperatura(String chat_id){
+  float t = dht.readTemperature();
+  char buffer[25];
+  int r = sprintf(buffer, "tem=%.2f", t);
+  bot.sendMessage(chat_id, buffer, "");
+  Serial.println(t);
+}
+void status (String chat_id){
+  float h = dht.readHumidity();
+  int Valor = analogRead(sensorhumedad);
+  float t = dht.readTemperature();
+
+  char buffer[100]; // Definir un buffer para almacenar la cadena formateada
+
+// Formatear los valores de los sensores en una cadena
+int n = sprintf(buffer, "Humedad suelo: %d, Humedad aire: %.2f%%, Temperatura: %.2f°C", Valor, h, t);
+
+// Verificar que el formato fue correcto
+if (n >= 0 && n < sizeof(buffer)) {
+  // Enviar la cadena formateada a través del bot de Telegram
+  bot.sendMessage(chat_id, buffer, "");
+} else {
+  Serial.println("Error al formatear la cadena");
+}
+}

@@ -1,0 +1,3 @@
+-tuvimos problemas con algunas conexiones de el arduino que no estan especificadas para el uso que necesitabamos darles.
+-tambien presentamos algunas confuciones con la generacion del codigo para su correcto funcionamiento. 
+-las conexiones con el motor de agua sumergible nos presentaron inconvenientes por la falta de información. 
